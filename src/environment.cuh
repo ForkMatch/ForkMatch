@@ -1,33 +1,38 @@
 #pragma once
-#define SAFEPARSE
 
-#define CurBlockSize 256
-
+//Allocation Config
+#define PREALLOC 45'600'000'000
 #define SOLN_PREALLOC 24'000'000'000
 #define OUTPUT_PREALLOC 17'300'000'000
 #define SOLNSIZE (SOLN_PREALLOC / sizeof(FuncPair))
 #define OUTPUTSIZE (OUTPUT_PREALLOC / sizeof(unsigned int))
 
+//Launch Config
+#define CurBlockSize 256
+#define DPBlockSize 1024
+#define MemAttempts 1 << 16
+#define LaunchLimit 100'000
+#define SubMaxMulSpill 512
+
 static const unsigned int CurBankSize = 1 << 20;
 static const unsigned int PaddingMul = 16;
 
-#define PREALLOC 45'600'000'000
+//Build Preprocessors
 
 //#define DEBUGMODE
-
 //#define TRACKDP
-
 #define POOLSTATS
-
 #define QUERYDATAPRINT
 #define SYMMETRY
-
-//#define CTGraph_Format
-
 //#define DEBUGPRINT
 #define INFOPRINT
 //#define CSVPRINT
 //#define ECSVPRINT
+//#define CTGRAPH_USAGE
+//#define ZEALOUSFORK
+//#define COOPGEN
+#define CONSOLIDATELAUNCHES
+#define SAFEPARSE
 
 #ifdef DEBUGPRINT
 #define debug_printf(f_, ...) printf((f_), ## __VA_ARGS__)
@@ -53,23 +58,11 @@ static const unsigned int PaddingMul = 16;
 #define ecsv_printf(f_, ...) do {} while(0)
 #endif
 
-#define DPBlockSize 1024
 
-static const bool NoWriteOverride = false;
-//#define ZealousAlloc
-
-#define MemAttempts 1 << 16
-#define LaunchLimit 100'000
-#define SubMaxMulSpill 512
-
-//Launch Config
-//#define UseDeviceLimits
-
-const bool WriteSolnFlag = true;
-#define ConsolidateLaunches
+//Disables Table Construction if false
+static const bool WriteSolnFlag = true;
 
 //Legacy Preprocessors for CCSR Data Type
-
 #define CCSRDegSize 0
 
 #ifdef CCSR_USE_DEG_ENCODES

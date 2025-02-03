@@ -8,6 +8,10 @@
 
 #include "smsm.cuh"
 
+
+/*
+* Get Grid ID -- Used to profile DP launches
+*/
 static __device__ __forceinline__ unsigned long long __gridid()
 {
     unsigned long long gridid;
@@ -15,6 +19,9 @@ static __device__ __forceinline__ unsigned long long __gridid()
     return gridid;
 }
 
+/*
+* Increment the counter by atomicAdd, then propogate result to the warp.
+*/
 __device__ __forceinline__ 
 unsigned int loopInc(unsigned int& sharedI, unsigned int& localI, const unsigned int inc, unsigned int wdx) {
     unsigned int local;
@@ -30,7 +37,9 @@ unsigned int loopInc(unsigned int& sharedI, unsigned int& localI, const unsigned
     return localI;
 
 }
-
+/*
+* Get the mapping from TBS that is "N" steps away
+*/
 __device__ __forceinline__ 
 FuncPair fetch(FuncPair* forest, FuncPair mapping, unsigned int steps) {
     for (unsigned int i = 0; i < steps; i++) {
@@ -40,16 +49,9 @@ FuncPair fetch(FuncPair* forest, FuncPair mapping, unsigned int steps) {
     return mapping;
 }
 
-
-template<unsigned int Size>
-struct IntArray {
-    unsigned int rows[Size];
-    __device__ __forceinline__
-    unsigned int operator [](int i) const { return rows[i]; }
-    __device__ __forceinline__
-    unsigned int& operator [](int i) { return rows[i]; }
-};
-
+/*
+* Check if there is an element left in the IntArray
+*/
 template<unsigned int RowCount>
 __device__ __forceinline__
 bool hasNext(VertexRows<RowCount> rows, IntArray<RowCount> is){
@@ -63,6 +65,9 @@ bool hasNext(VertexRows<RowCount> rows, IntArray<RowCount> is){
     return true;
 }
 
+/*
+* Check whether neighbours are identical, and increments otherwise
+*/
 template<unsigned int RowCount, bool isCoop>
 __device__ __forceinline__
 bool isoCompare(IntArray<RowCount>& is, unsigned int* data) {
@@ -134,6 +139,9 @@ bool isoCompare(IntArray<RowCount>& is, unsigned int* data) {
     return false;
 }
 
+/*
+* Attempt to insert data into the TBS
+*/
 __device__ __forceinline__
 bool attemptInsert(FuncPair* forest,
     unsigned int dst, unsigned int& outputSize, unsigned int outputSubMax, unsigned int outputTrueMax,
@@ -150,9 +158,6 @@ bool attemptInsert(FuncPair* forest,
     if (wdx == 0) {
         broadcast = atomicAdd(&outputSize, warpPop);
     }
-
-    //if (blockIdx.x == 0)
-        //printf("| %lu, %lu |", wdx, localPop);
 
     broadcast = __shfl_sync(0xffffffff, broadcast, 0);
 
@@ -171,37 +176,21 @@ bool attemptInsert(FuncPair* forest,
         writeLoc += localPop;
 
         forest[writeLoc] = { mapping, parent };
-        /*
-        if (forest[parent].prev == writeLoc) {
-            printf("POOOP\n");
-        }*/
     }
 
     return false;
 }
 
+/*
+* Check whether new mapping is found in partial match
+*/
 template<bool hasSymmetry>
 __device__ __forceinline__
 bool isInj(FuncPair func, unsigned int mapping, FuncPair* forest, unsigned int lastSymmetry) {
     FuncPair prevF = func;
 
-#ifdef UBHELLCHECKS
-    int counter = 1;
-#endif
-
+    //Change this as its bad practice with malformed inputs
     while (true) {
-
-#ifdef UBHELLCHECKS
-        //If we in UB Hell, this is one sign
-        if (counter > 128) {
-            printf("(%lu, %lu (%i %i) %i), ", prevF.mapping, prevF.prev, threadIdx.x, blockIdx.x, counter);
-        }
-        if (counter > 256) {
-            __trap();
-        }
-
-        counter++;
-#endif
 
         if constexpr (hasSymmetry) {
             lastSymmetry--;
@@ -237,7 +226,11 @@ bool isInj(FuncPair func, unsigned int mapping, FuncPair* forest, unsigned int l
     return true;
 }
 
-template<unsigned int Decomp = 128>
+
+/*
+* Cooperatively generate the partial matches
+*/
+template<unsigned int Decomp>
 __device__ __forceinline__
 bool isoGenCoop(FuncPair func, VertexRows<2> rows, unsigned int* data, FuncPair* forest,
     unsigned int outputOffset, unsigned int& outputSize, unsigned int outputSubMax, unsigned int outputTrueMax,
@@ -255,8 +248,6 @@ bool isoGenCoop(FuncPair func, VertexRows<2> rows, unsigned int* data, FuncPair*
 
     unsigned int l0SuperEnd = (_ceil(l0End - l0Start, (unsigned int) 32) * 32) + l0Start;
 
-    //printf("l0 %u %u (%u) (%u) l1 %u %u \n", l0Start, l0End, l0SuperEnd, (_ceil(l0End - l0Start, (unsigned int)32) * 32), l1Start, l1End);
-
     bool earlyBreak = false;
 
     for (unsigned int l0index = wdx + l0Start; l0index < l0SuperEnd; l0index += 32) {
@@ -268,12 +259,9 @@ bool isoGenCoop(FuncPair func, VertexRows<2> rows, unsigned int* data, FuncPair*
             
             l1Start = lastIndex;
 
-            //int steps = 0;
-
             while (l1Start + Decomp < l1End) {
                 if (mapping >= data[l1Start + Decomp]) {
                     l1Start += Decomp;
-                    //steps++;
                 }
                 else {
                     break;
@@ -303,7 +291,10 @@ bool isoGenCoop(FuncPair func, VertexRows<2> rows, unsigned int* data, FuncPair*
 
 }
 
-template<unsigned int BlockSize, unsigned int RowCount, bool hasSymmetry, bool isCoop = false>
+/*
+* Generate the partial matches for some number of input rows
+*/
+template<unsigned int BlockSize, unsigned int RowCount, bool hasSymmetry, bool isCoop>
 __device__ __forceinline__
 bool isoGen(FuncPair func, VertexRows<RowCount> rows, unsigned int* data, FuncPair* forest, 
     unsigned int dst, unsigned int& outputSize, unsigned int outputSubMax, unsigned int outputTrueMax,
@@ -319,14 +310,7 @@ bool isoGen(FuncPair func, VertexRows<RowCount> rows, unsigned int* data, FuncPa
         if constexpr (isCoop) {
             static_assert(RowCount == 1, "Coop only supported for non-intersections");
             is[i] += wdx;
-            /*
-            if (is[i] > rows[i].end) {
-                is[i] = rows[i].end;
-            }*/
         }
-        //if (rows[i].end == 0) {
-            //return false;
-        //}
     }
 
     unsigned int pred;
@@ -339,11 +323,6 @@ bool isoGen(FuncPair func, VertexRows<RowCount> rows, unsigned int* data, FuncPa
 
         if (pred) {
             mapping = data[is[0]];
-
-            /*
-            if (rows[0].start == 62567) {
-                printf("");
-            }*/
 
             pred = isoCompare<RowCount, isCoop>(is, data);
 
@@ -365,17 +344,9 @@ bool isoGen(FuncPair func, VertexRows<RowCount> rows, unsigned int* data, FuncPa
     return earlyBreak;
 }
 
-__device__
-__forceinline__ bool isOrdered(unsigned int mapping, VertexRow row, unsigned int* data) {
-    for (unsigned int ptr = row.start; ptr < row.end - 1; ptr++) {
-        if (data[ptr] > data[ptr + 1]) {
-            printf("For %u Error %u > %u (ptr %u start %u end %u)\n", mapping, data[ptr], data[ptr + 1], ptr, row.start, row.end);
-            return false;
-        }
-    }
-    return true;
-}
-
+/*
+* Get row data using Requirements
+*/
 template<unsigned int HeaderCount>
 __device__
 __forceinline__ void fetchRows(
@@ -398,6 +369,9 @@ __forceinline__ void fetchRows(
     }
 }
 
+/*
+* Shuffle sync for non u64 data types
+*/
 template<typename T>
 __device__
 __forceinline__ 
@@ -415,7 +389,9 @@ T s__shfl_sync(unsigned mask, T var, int srcLane) {
     return var;
 }
 
-
+/*
+* Generate all partial match extensions for a given depth
+*/
 template<unsigned int BlockSize, unsigned int HeaderCount, bool hasSymmetry>
 __device__
 __forceinline__ bool isoMatch(
@@ -451,14 +427,6 @@ __forceinline__ bool isoMatch(
 #else
     unsigned int lastSymmetry = 0;
 #endif
-
-    /*
-    if (idx == 0) {
-        printf("Data: %u, %u, %u, %u", d_reqs[0], d_reqs[3], header.index, depth);
-        for (unsigned int i = 0; i < 10; i++) {
-            __nanosleep(1'000'000);
-        }
-    }*/
 
     const int WarpCount = BlockSize / 32;
     
@@ -520,31 +488,12 @@ __forceinline__ bool isoMatch(
         }
 #endif
 
-        /*
-        unsigned int rowDelta = firstRow.end - firstRow.start;
-
-        
-        bool tooLarge = false;
-        unsigned int ballot = 0;
-
-        if (header.count == 2) {
-            tooLarge = rowDelta >= 256;
-            ballot = __ballot_sync(0xffffffff, tooLarge);
-        }
-
-        if (tooLarge) {
-            firstRow.end = firstRow.start;
-        }*/
-
 
         if constexpr (HeaderCount == 1) {
 
             if (tooLarge && depth == 2) {
                 for (unsigned int srcLane = 0; srcLane < 32; srcLane++) {
                     unsigned int _parent = __shfl_sync(0xffffffff, parent, srcLane);
-
-                    //f_secondRow = s__shfl_sync(0xffffffff, func, srcLane);
-                    //secondRow = s__shfl_sync(0xffffffff, firstRow, srcLane); 
 
                     if (_parent) {
                         fetchRows<HeaderCount>(forest, data, d_reqs,
@@ -612,7 +561,7 @@ __forceinline__ bool isoMatch(
 
                 unsigned int splitCount = 2;
 
-#ifdef ZealousAlloc
+#ifdef ZEALOUSFORK
                 if (workCompleted < workCount) {
                     splitCount = _ceil(workCount, workCompleted);
                 }
@@ -632,7 +581,7 @@ __forceinline__ bool isoMatch(
                 else {
                     _dst = memPool.pop();
                 }
-#ifdef ZealousAlloc
+#ifdef ZEALOUSFORK
                 for (unsigned int i = 0; i < splitCount; i++) {
 
                     if (i == splitCount - 1) {
@@ -644,6 +593,8 @@ __forceinline__ bool isoMatch(
                     }
 
                     Job currentJob = { .src = job.src + offsetSrc, .dst = _dst, .count = splitSize };
+
+                    //That is one long print statement, oops xD
                     debug_printf("(%u out of %u) Restructuring Current (grid %llu offsetSrc %u splitCount %u workcount %u workcompleted %u) with src %u (sizeof %llu) dst %u count %u\n", i + 1, splitCount, __gridid(), offsetSrc, splitCount, workCount, workCompleted, currentJob.src, sizeof(currentJob.src), currentJob.dst, currentJob.count);
                     
                     _posting.jobs[0] = currentJob;
@@ -737,6 +688,9 @@ __forceinline__ bool isoMatch(
 
 }
 
+/*
+* Convert the TBS into a Table
+*/
 template<unsigned int BlockSize, bool WriteData, bool hasSymmetry>
 __device__
 __forceinline__ void isoWrite(FuncPair* forest, JobPosting posting, unsigned int* output, const Requirements& reqs)
@@ -814,6 +768,9 @@ __forceinline__ void isoWrite(FuncPair* forest, JobPosting posting, unsigned int
 
 }
 
+/*
+* Initialise the first depth of the TBS
+*/
 template<unsigned int BlockSize>
 __device__
 __forceinline__ void isoInit(
@@ -900,6 +857,9 @@ __forceinline__ void isoInit(
     
 }
 
+/*
+* Iterately generate each layer of the TBS for all requirements
+*/
 template<unsigned int BlockSize, bool hasSymmetry>
 __device__ void isoLoop(
     JobPosting& posting, 
@@ -952,6 +912,9 @@ __device__ void isoLoop(
 
 }
 
+/*
+* This command is only launched host side to start the problem
+*/
 template<unsigned int BlockSize, bool hasSymmetry>
 __global__ void initPosting(
      unsigned int* workSplits,
@@ -970,7 +933,9 @@ __global__ void initPosting(
     isoLoop<BlockSize, hasSymmetry>(posting, memPool, forest, data, reqs, startDepth, output, &scratch, true);
 }
 
-
+/*
+* Initialise the first depth of the TBS
+*/
 template<unsigned int BlockSize, bool hasSymmetry>
 __device__
 void d_launchPosting(
@@ -1035,6 +1000,9 @@ void d_launchPosting(
     isoLoop<BlockSize, hasSymmetry>(posting, memPool, forest, data, reqs, depth, output, &scratch, dstOwnership);
 }
 
+/*
+* Launched Kernel to continue the TBS search with a grid with a single block
+*/
 template<unsigned int BlockSize, bool hasSymmetry>
 __global__
 void launchPosting(
@@ -1050,6 +1018,9 @@ void launchPosting(
     d_launchPosting<BlockSize, hasSymmetry>(_posting, memPool, forest, data, reqs, output, depth, attempts);
 }
 
+/*
+* Launched Kernel to continue the TBS search with a grid with two blocks
+*/
 template<unsigned int BlockSize, bool hasSymmetry>
 __global__
 void launchPosting(
@@ -1071,7 +1042,9 @@ void launchPosting(
 
 }
 
-
+/*
+* Free a memory bank (Tail Reference)
+*/
 __global__
 void freeDst(
     MemoryPool memPool,
@@ -1081,6 +1054,9 @@ void freeDst(
     memPool.push(oBank);
 }
 
+/*
+* Launched Kernel to two new blocks to search the TBS
+*/
 template<unsigned int BlockSize, bool hasSymmetry>
 __global__
 void asyncLaunchPosting2(
@@ -1094,7 +1070,7 @@ void asyncLaunchPosting2(
     unsigned int depth2,
     unsigned int dst) {
 
-#ifdef ConsolidateLaunches
+#ifdef CONSOLIDATELAUNCHES
     launchPosting <DPBlockSize, hasSymmetry> << < 2, DPBlockSize, 0, cudaStreamFireAndForget >> > (
         _posting1,
         _posting2,
@@ -1128,6 +1104,9 @@ void asyncLaunchPosting2(
     
 }
 
+/*
+* Launched Kernel to have a block search the TBS
+*/
 template<unsigned int BlockSize, bool hasSymmetry>
 __global__
 void asyncLaunchPosting(
@@ -1150,6 +1129,10 @@ void asyncLaunchPosting(
 
     freeDst<<< 1, 1, 0, cudaStreamTailLaunch >>> (memPool, dst);
 }
+
+/*
+* Prints how many times the memory bank has been used
+*/
 #ifdef POOLSTATS
 __global__ void printPoolStats(MemoryPool memPool) {
     unsigned long long count = *(memPool.popCount);
@@ -1157,6 +1140,10 @@ __global__ void printPoolStats(MemoryPool memPool) {
     csv_printf("Pop Count: %llu, ", count);
 }
 #endif
+
+/*
+* Populates memory pool with allocations
+*/
 __global__ void populatePool(MemoryPool memPool) {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -1170,6 +1157,9 @@ __global__ void populatePool(MemoryPool memPool) {
 
 }
 
+/*
+* Creates preallocation for all future work
+*/
 template<size_t MaxPrealloc = PREALLOC>
 unsigned char* prealloc() {
     unsigned char* allocation;
@@ -1188,15 +1178,12 @@ __host__ void match(std::string queryStr, std::string dataStr, unsigned char* pr
     auto start = std::chrono::steady_clock::now();
 
     int vertexCount, edgeCount;
-
     GPUGraph* data = parseGraph(dataStr, prealloc, vertexCount, edgeCount);
 
     CCSR query;
-
     fileParse(queryStr, &query, false);
 
     Requirements requirements;
-
     preProcessQuery(query, &requirements);
 
     auto end = std::chrono::steady_clock::now();
@@ -1207,12 +1194,12 @@ __host__ void match(std::string queryStr, std::string dataStr, unsigned char* pr
     ReqHeader* req_header;
     unsigned int* req_data;
     int32_t* req_mappingData;
+
     info_printf("\nReq Mapping Data: ");
     for (unsigned int i = 0; i < query.count; i++) {
         info_printf("%i, ", requirements.mappingData[i]);
     }
     info_printf("\n");
-
 
 
     p_malloc(&req_header, sizeof(ReqHeader) * query.count, prealloc);
@@ -1250,7 +1237,6 @@ __host__ void match(std::string queryStr, std::string dataStr, unsigned char* pr
     unsigned long long int* popCount;
     p_malloc(&popCount, sizeof(unsigned long long int), prealloc);
     cudaMemset(popCount, 0, sizeof(unsigned long long int));
-
     memPool.popCount = popCount;
 #endif
 
@@ -1362,7 +1348,7 @@ __host__ void match(std::string queryStr, std::string dataStr, unsigned char* pr
 
 int main(int argc, char* argv[])
 {
-#ifdef CTGraph_Format
+#ifdef CTGRAPH_USAGE
     info_printf("CT Graph Problem\n");
     csv_printf("CT Gr,");
 #else
@@ -1399,6 +1385,7 @@ int main(int argc, char* argv[])
     else {
         exit(99);
     }
+
     auto end = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_seconds = end - start;
     info_printf("\nEnd to End Time: %fs\n", elapsed_seconds.count());

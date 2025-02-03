@@ -232,14 +232,6 @@ void genereateCCSRRequirements(CCSR graph, Requirements requirements,
 
 	unsigned int numOfReqs = 0;
 
-	/*
-	unsigned int* localVerticeLocs = new unsigned int[graph.count]{};
-	unsigned int offset = 0;
-	for (unsigned int i = 0; i < graph.count; i++) { //This is bad! Just use stagger data!
-		localVerticeLocs[i] = offset;
-		offset += graph.data[offset].elem + 1;
-	}*/
-
 	unsigned int relativeDepth;
 	bool found = false;
 
@@ -679,95 +671,6 @@ __host__ unsigned int preProcessQuery(CCSR query, Requirements* requirements) {
 	}
 
 
-	/*
-	for (unsigned int i = 0; i < symmetries.size(); i++) {
-		auto func = &(symmetries[i]);
-		for (unsigned int i2 = 0; i2 < query.count; i2++) {
-			func->mappings[i2] = query.demangle(func->mappings[i2]);
-		}
-	}
-
-	for (unsigned int i = 0; i < query.count; i++) {
-		unsigned int vert1 = getIndex((unsigned int*)requirements->mappingData, query.count, i);
-		for (unsigned int i2 = 0; i2 < query.count; i2++) {
-			unsigned int vert2 = getIndex((unsigned int*)requirements->mappingData, query.count, i2);
-
-			for (unsigned int i3 = 0; i3 < symmetries.size(); i3++) {
-				if (symmetries[i3].mappings[vert1] == vert2) {
-					equivalentGroups[vert1].push_back(vert2);
-					break;
-				}
-			}
-		}
-	}
-
-	info_printf("\n");
-
-	for (unsigned int i = 0; i < query.count; i++) {
-		auto group = equivalentGroups[i];
-		info_printf("Equivalent Groups: ");
-		for (unsigned int vert : group) {
-			info_printf("%u, ", vert);
-		}
-		info_printf("\n");
-	}
-
-	bool* disabled = new bool[query.count] {};
-*/
-	
-	/*
-	for (int i = query.count - 1; i >= 0; i--) {
-		unsigned int vert1 = getIndex((unsigned int*)requirements->mappingData, query.count, i);
-		std::vector<unsigned int> group = equivalentGroups[vert1];
-
-		for (int i2 = query.count - 1; i2 >= 0; i2--) {
-			unsigned int vert2 = getIndex((unsigned int*)requirements->mappingData, query.count, i2);
-			if (std::find(group.begin(), group.end(), vert2) == v.end()) {
-				std::vector<unsigned int> secondgroup = equivalentGroups[vert2];
-				if (secondgroup.size() > 1) {
-					if()
-					bool rotationNotFound;
-					for (unsigned int i3 : secondgroup) {
-
-					}
-				}
-			}
-		}
-
-	}*/
-/*
-	for (int i = query.count - 1; i >= 0; i--) {
-
-		unsigned int* lastSymmetry = &(requirements->header[(query.count - 1) - i].lastSymmetry);
-		*lastSymmetry = 0;
-
-		unsigned int vert1 = getIndex((unsigned int*)requirements->mappingData, query.count, i);
-
-	
-
-		for (unsigned int i2 = i + 1; i2 < query.count; i2++) {
-			unsigned int vert2 = getIndex((unsigned int*)requirements->mappingData, query.count, i2);
-
-			for (unsigned int i3 = 0; i3 < symmetries.size(); i3++) {
-				if (!disabled[vert1] && symmetries[i3].mappings[vert1] == vert2) {
-					*lastSymmetry = i2 - i;
-					break;
-				}
-			}
-
-			if (*lastSymmetry) {
-				break;
-			}
-	
-		
-		}
-	}
-
-	
-	requirements->header[0].lastSymmetry = 0;
-	requirements->header[1].lastSymmetry = 1;
-	requirements->header[2].lastSymmetry = 0;
-	requirements->header[3].lastSymmetry = 1;*/
 #endif
 
 	//Reformat for SMSM:

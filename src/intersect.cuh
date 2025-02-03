@@ -11,6 +11,10 @@ T __ceil(T val, T div) {
 	return (val + div - 1) / div;
 }
 
+
+/*
+* _popc implementation for host side and static asserts
+*/
 template<typename T>
 __device__ __host__
 constexpr int __popcount(T val) {
@@ -21,28 +25,9 @@ constexpr int __popcount(T val) {
 	return result;
 }
 
-__device__ __forceinline__
-unsigned int __lds(int address) {
-	unsigned int val;
-	asm("ld.shared.u32 %0, [%1];": "=r" (val) : "r" (address));
-	return val;
-}
-
-__device__ __forceinline__
-unsigned int __lds(int address, int offset) {
-	return __lds(address + offset * sizeof(unsigned int));
-}
-
-__device__ __forceinline__
-void __sts(int address, unsigned int val) {
-	asm("st.shared.u32 [%0], %1;":: "r" (address), "r" (val));
-}
-
-__device__ __forceinline__
-void __sts(int address, int offset, unsigned int val) {
-	__sts(address + offset * sizeof(unsigned int), val);
-}
-
+/*
+* Binary Search of fixed Count (2 ^ LeafCount Elements)
+*/
 template<unsigned int LeafCount>
 __device__ __forceinline__
 bool binarySearchFixed(unsigned int lval, unsigned int* list, unsigned int start, unsigned int end, unsigned int& index) {
@@ -72,6 +57,9 @@ bool binarySearchFixed(unsigned int lval, unsigned int* list, unsigned int start
 
 }
 
+/*
+* Optimised Cooperative Binary Search
+*/
 template<unsigned int Decomp = 0>
 __device__ __forceinline__
 bool binarySearch(unsigned int lval, unsigned int* list, unsigned int start, unsigned int end, unsigned int& index) {
@@ -79,7 +67,6 @@ bool binarySearch(unsigned int lval, unsigned int* list, unsigned int start, uns
 	if constexpr (Decomp) {
 		if (end - start == Decomp) {
 			return binarySearchFixed<Decomp>(lval, list, start, end, index);
-			//return binarySearchFixed2<Decomp>(lval, (char*) (list + start));
 		}
 	}
 
@@ -102,7 +89,9 @@ bool binarySearch(unsigned int lval, unsigned int* list, unsigned int start, uns
 
 }
 
-
+/*
+* Warp Intersection for two lists
+*/
 template<unsigned int CoopSize = 32, unsigned int Decomp = 0>
 __device__ __forceinline__
 void intersect(unsigned int* list0, int list0Size, unsigned int* list1, int list1Size, unsigned int* output, unsigned int& outputSize, unsigned int wdx)
@@ -162,14 +151,6 @@ void intersect(unsigned int* list0, int list0Size, unsigned int* list1, int list
 				output[writeLoc] = lval;
 			}
 
-			/*
-			unsigned int writeMask = __ballot_sync(coopMask, pred);
-			if (pred) {
-				unsigned int writeLoc = outputSize + __popc(writeMask & localMask);
-				output[writeLoc] = lval;
-			}
-
-			outputSize += __popc(writeMask);*/
 		}
 		else {
 			if (pred) {
@@ -182,6 +163,9 @@ void intersect(unsigned int* list0, int list0Size, unsigned int* list1, int list
 
 }
 
+/*
+* Single Thread Intersection for two lists
+*/
 __device__ __forceinline__
 void scanIntersect(unsigned int* list0, unsigned int list0Size, unsigned int* list1, unsigned int list1Size, unsigned int* output, unsigned int& outputSize) {
 	int i0 = 0;
@@ -241,11 +225,9 @@ __global__ void testFunc(unsigned int* list0, unsigned int list0Size,
 		if (wdx == 0) {
 			if (list0Size < list1Size) {
 				scanIntersect(list0, list0Size, list1, list1Size, output, outputSize[threadIdx.x / 32]);
-				//intersect<subWarpSize, 128>(list0, list0Size, list1, list1Size, output, outputSize[threadIdx.x / 32], wdx);
 			}
 			else {
 				scanIntersect(list1, list1Size, list0, list0Size, output, outputSize[threadIdx.x / 32]);
-				//intersect<subWarpSize, 128>(list1, list1Size, list0, list0Size, output, outputSize[threadIdx.x / 32], wdx);
 			}
 		}
 	}
@@ -259,17 +241,6 @@ __global__ void testFunc(unsigned int* list0, unsigned int list0Size,
 	if (wdx == 0) {
 		printf("\nTime Taken (Avg): %llu cycles, list0 Size: %i list1 Size: %i Output Size: %u\n", avg, list0Size, list1Size, outputSize[threadIdx.x / 32]);
 
-		/*
-		printf("\nList 0:");
-		for (int i = 0; i < list0Size; i++) {
-			printf("%i,", list0[i]);
-		}
-
-		printf("\nList 1:");
-		for (int i = 0; i < list1Size; i++) {
-			printf("%i,", list1[i]);
-		}*/
-
 		printf("\nExpected (%i):", expectedSize);
 		for (int i = 0; i < expectedSize; i++) {
 			printf("%i,", expected[i]);
@@ -281,34 +252,30 @@ __global__ void testFunc(unsigned int* list0, unsigned int list0Size,
 			printf("%i,", output[i]);
 		}
 
-		/*
-		printf("\Expected (%i):", outputSize);
-		for (int i = 0; i < outputSize; i++) {
-			printf("%i,", expected[i]);
-		}
-		printf("\n");*/
-
 
 		for (int i = 0; i < outputSize[threadIdx.x / 32] && i < expectedSize; i++) {
 			if (output[i] != expected[i]) {
 				printf("\nError at %i with value %i vs %i\n", i, output[i], expected[i]);
-				//__trap());
+				//__trap();
 			}
 		}
 
 		if (outputSize[threadIdx.x / 32] < expectedSize) {
 			printf("\nError: Output is too small %i vs %i\n", outputSize[threadIdx.x / 32], expectedSize);
-			//__trap());
+			//__trap();
 		}
 
 		if (outputSize[threadIdx.x / 32] > expectedSize) {
 			printf("\nError: Output is too large %i vs %i\n", outputSize[threadIdx.x / 32], expectedSize);
-			//__trap());
+			//__trap();
 		}
 
 	}
 }
 
+/*
+* Intersection Profiling Suite
+*/
 __host__ void profileIntersect() {
 #define MAXSETSIZE 30
 #define MAXVAL (MAXSETSIZE * 16)
@@ -373,6 +340,9 @@ __host__ void profileIntersect() {
 	}
 }
 
+/*
+* Helper Functions used in rest of Code
+*/
 void cudaErrorSync() {
 	if (cudaError_t error = cudaDeviceSynchronize()) {
 		info_printf("Error: %s\n", cudaGetErrorName(error));

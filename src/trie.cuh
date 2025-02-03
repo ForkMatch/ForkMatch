@@ -28,6 +28,9 @@ struct BasicAdd
 	}
 };
 
+/*
+* Copied from EGSM when reimplementing CT in our codebase
+*/
 #define MAX_LCOUNT 32
 #define BUCKET_SIZE 8u
 #define CT_GRID_DIM 1024u
@@ -100,6 +103,9 @@ struct LabelEdge {
 	}
 };
 
+/*
+* Required for CUB Sorting
+*/
 struct LabelEdge_decomposer
 {
 	__host__ __device__::cuda::std::tuple<unsigned int&, unsigned int&, unsigned int&> operator()(LabelEdge& key) const
@@ -123,7 +129,7 @@ enum GraphType {
 
 #define DefaultGPUGraph BaseGPUGraph<Trie>
 
-#ifdef CTGraph_Format
+#ifdef CTGRAPH_USAGE
 #define GPUGraph BaseGPUGraph<Cuckoo>
 #else
 #define GPUGraph DefaultGPUGraph
@@ -149,12 +155,18 @@ struct BaseGPUGraph {
 	//Werid bug present if not padded on 8 word boundary
 	unsigned int padding[3];
 
-
+	/*
+	* Get Pair from top layer of Trie Graph
+	*/
 	__device__ __forceinline__
 		VertexPair getPair(unsigned int vertex) {
 		return vertexPairs[vertex / 32];
 	}
 
+
+	/*
+	* Get high bit corresponding to the vertex
+	*/
 	__device__ __forceinline__
 		unsigned int getMask(VertexPair pair, unsigned int vertex) {
 		unsigned int mod = vertex % 32;
@@ -163,6 +175,9 @@ struct BaseGPUGraph {
 		return pair.vertices & highBit;
 	}
 
+	/*
+	* Get offset of vertex with respect to other vertices represented by this bitfield
+	*/
 	__device__ __forceinline__
 		unsigned int getLocalOffset(unsigned int vertices, unsigned int mask) {
 		unsigned int remMask = mask - 1;
@@ -170,7 +185,7 @@ struct BaseGPUGraph {
 	}
 
 	//Hacking CT onto our format for profiling reasons!
-#ifdef CTGraph_Format
+#ifdef CTGRAPH_USAGE
 
 	__device__ __forceinline__
 		unsigned int getOffsetLoc(unsigned int bucket) {
@@ -212,6 +227,9 @@ struct BaseGPUGraph {
 
 #endif
 
+	/*
+	* Get location of a vertex's neighbours in the Graph
+	*/
 	__device__ __forceinline__
 		unsigned int getOffset(unsigned int vertex) {
 		unsigned int neighourOffset = 0;
@@ -225,7 +243,7 @@ struct BaseGPUGraph {
 				neighourOffset = pair.pointer + localOffset;
 			}
 		}
-#ifdef CTGraph_Format
+#ifdef CTGRAPH_USAGE
 		if constexpr (gType == Cuckoo) {
 			unsigned int hash_value = getHash(vertex);
 			CT_Bucket bucket = vertices[hash_value];
@@ -242,7 +260,9 @@ struct BaseGPUGraph {
 		return neighourOffset;
 	}
 
-
+	/*
+	* Get neighbours of a vertex
+	*/
 	__device__ __forceinline__
 		VertexRow neighbours(unsigned int vertex) {
 
@@ -266,7 +286,7 @@ struct BaseGPUGraph {
 				return { neighbourStart, neighbourEnd };
 			}
 		}
-#ifdef CTGraph_Format
+#ifdef CTGRAPH_USAGE
 		if constexpr (gType == Cuckoo) {
 			unsigned int neighbourOffset = getOffset(vertex);
 
@@ -345,36 +365,10 @@ void printTrie(BaseGPUGraph<gType>* triegraphs, int labelCount) {
 		}
 	}
 
-	/*
-	for (int i = 1; i <= labelCount; i++) {
-		GPUGraph triegraph = triegraphs[i];
-		printf("\nGraph Offsets %i: ", i);
-		for (int i2 = 0; i2 < 68; i2++) {
-			printf("%u, ", triegraph.neighbourOffsets[i2]);
-		}
-	}
-
-	for (int i = 1; i <= labelCount; i++) {
-		GPUGraph triegraph = triegraphs[i];
-		printf("\nGraph Data %i: ", i);
-		for (int i2 = 0; i2 < 68; i2++) {
-			printf("%u, ", triegraph.neighbourData[i2]);
-		}
-	}*/
-
-	/*
-	printf("\nTest: ");
-	for (int i = 1; i <= labelCount; i++) {
-		GPUGraph triegraph = triegraphs[i];
-		printf("\nGraph label %i: ", i);
-		for (int i2 = 0; i2 < 10; i2++) {
-			printf("(%u, %u), ", triegraph.vertexPairs[i2].vertices, triegraph.vertexPairs[i2].pointer);
-		}
-	}*/
 	__nanosleep(1'000'000);
 }
 
-#ifdef CTGraph_Format
+#ifdef CTGRAPH_USAGE
 __host__
 void buildConstantTable(unsigned int labelCount) {
 
@@ -387,24 +381,17 @@ void buildConstantTable(unsigned int labelCount) {
 	for (unsigned int index = 0; index < labelCount; index++)
 	{
 
-		/*
-
-		cudaErrorCheck(cudaMemset(
-			vertices,
-			UINT8_MAX,
-			sizeof(CT_Bucket) * bucketCount
-		));*/
-
 		CT_C_[CIdx(index, 0)] = std::max(1u, (unsigned int)(distrib(gen) % PRIME));
 		CT_C_[CIdx(index, 1)] = distrib(gen) % PRIME;
-
-		//printf("Data %lu and %lu for index %lu", CT_C_[CIdx(index, 0)], CT_C_[CIdx(index, 1)], index);
 
 	}
 
 	cudaErrorCheck(cudaMemcpyToSymbol(CT_C, CT_C_, sizeof(CT_C_)));
 }
 
+/*
+* Sanity check CT is correct
+*/
 __global__
 void compareTrie(DefaultGPUGraph* graphs, GPUGraph* _graphs, int labelCount) {
 
@@ -420,7 +407,6 @@ void compareTrie(DefaultGPUGraph* graphs, GPUGraph* _graphs, int labelCount) {
 
 
 			if (delta != _delta) {
-				//printf("Length mismatch vertex %lu %lu - %lu (%lu) vs %lu - %lu  (%lu) %lu\n", vertex, row.start, row.end, row.end - row.start, _row.start, _row.end, _row.end - _row.start, label);
 				__trap();
 			}
 
@@ -449,6 +435,9 @@ void printCT(GPUGraph* graphs, unsigned elems, int labelCount) {
 	}
 }
 
+/*
+* Populate graph using current hashes
+*/
 template<int BlockSize>
 __global__
 void populateHashes(GPUGraph* graphs, unsigned int* g_neighbourData, int labelCount, int vertexCount) {
@@ -475,6 +464,9 @@ void populateHashes(GPUGraph* graphs, unsigned int* g_neighbourData, int labelCo
 	}
 }
 
+/*
+* Populate second layer of each CT
+*/
 template<int BlockSize>
 __global__
 void populateOffsets(GPUGraph* graphs, int bucketCount, int label) {
@@ -502,6 +494,9 @@ void populateOffsets(GPUGraph* graphs, int bucketCount, int label) {
 	}
 }
 
+/*
+* Populate last layer of each CT
+*/
 template<int BlockSize>
 __global__
 void populateNeighbours(GPUGraph* graphs, int bucketCount, int label) {
@@ -521,7 +516,6 @@ void populateNeighbours(GPUGraph* graphs, int bucketCount, int label) {
 				VertexRow _row = _graph->neighbours(vertex);
 
 				if (row.end - row.start != _row.end - _row.start) {
-					//printf("Row issue %lu %lu - %lu (%lu) vs %lu - %lu  (%lu) %lu\n", vertex, _row.start, _row.end, _row.end - _row.start, row.start, row.end, row.end - row.start, label);
 					__trap();
 				}
 
@@ -533,6 +527,9 @@ void populateNeighbours(GPUGraph* graphs, int bucketCount, int label) {
 	}
 }
 
+/*
+* Set data with a u32 const
+*/
 __global__
 void memsetKernel(void* dst, const unsigned int val, size_t size) {
 	size_t idx = threadIdx.x + blockIdx.x * blockDim.x;
@@ -549,6 +546,9 @@ void memsetKernel(void* dst, const unsigned int val, size_t size) {
 #define OffsetLayerSize (sizeof(unsigned int)* (BUCKET_SIZE * labelCount * vertexCount + 1))
 #define NeighbourLayerSize (sizeof(unsigned int) * edgeCount)
 
+/*
+* Attempt to construction the Cuckoo Tries with a given bucket size and hash function
+*/
 template<int BlockSize>
 __global__
 void attemptPopulateHashes(TempCSRGraph input, GPUGraph* graphs, unsigned int* g_neighbourData, int labelCount, int vertexCount, int attempts, void* cubTempStorage, size_t cubTempSize) {
@@ -624,7 +624,9 @@ void attemptPopulateHashes(TempCSRGraph input, GPUGraph* graphs, unsigned int* g
 }
 #endif
 
-
+/*
+* Increment the counter by atomicAdd, then propogate result.
+*/
 template<int Amount, bool isWarp>
 __device__ __forceinline__
 int coopAdd(int* ptr, int gdx, int& broadcast) {
@@ -644,6 +646,9 @@ int coopAdd(int* ptr, int gdx, int& broadcast) {
 	return broadcast;
 }
 
+/*
+* Parse a variable length of numbers into an int
+*/
 __device__ __forceinline__
 unsigned int parseNum(char* & c) {
 	unsigned int val = 0;
@@ -686,6 +691,9 @@ private:
 	VertexPair* pairs;
 };
 
+/*
+* Calculate bit count of each bitfield in preparation for exclusive scan
+*/
 template<int Decomp, int BlockSize>
 __global__
 void bitfieldExpansion(DefaultGPUGraph* graphs, int threadCount) {
@@ -704,6 +712,9 @@ void bitfieldExpansion(DefaultGPUGraph* graphs, int threadCount) {
 	}
 }
 
+/*
+* Use scan result to finish the Trie Graph
+*/
 template<int Decomp, int BlockSize>
 __global__
 void finishScan(DefaultGPUGraph* graphs, int threadCount, unsigned int label) {
@@ -733,6 +744,9 @@ void finishScan(DefaultGPUGraph* graphs, int threadCount, unsigned int label) {
 	}
 }
 
+/*
+* Convert Edge tokens into a Trie Graph
+*/
 __global__
 void csrToTrie(TempCSRGraph input, DefaultGPUGraph* graphs, unsigned int* g_neighbourData, int threadCount) {
 	int tdx = threadIdx.x;
@@ -780,6 +794,9 @@ void csrToTrie(TempCSRGraph input, DefaultGPUGraph* graphs, unsigned int* g_neig
 	}
 }
 
+/*
+* The Initial Parsing Kernel
+*/
 template<int ThreadDist, int BlockSize>
 __global__ 
 void parseCSR(char* input, int inputSize, TempCSRGraph output, int* parsed, int* completion, void* cubTempStorage, size_t cubTempSize,
@@ -924,7 +941,7 @@ void parseCSR(char* input, int inputSize, TempCSRGraph output, int* parsed, int*
 				csrToTrie << < blockCount, BlockSize >> > (output, triegraphs, g_neighbourData, edgeCount);
 			}
 
-#ifdef CTGraph_Format
+#ifdef CTGRAPH_USAGE
 			attemptPopulateHashes<BlockSize> << <1, 1 >> > (output, (GPUGraph*)triegraphs, g_neighbourData, labelCount, vertexCount, 0, cubTempStorage, cubTempSize);
 #endif
 		
@@ -975,6 +992,9 @@ void printGraph3(GPUGraph* triegraphs) {
 	__nanosleep(1'000'000);
 }
 
+/*
+* Get Data from Header file
+*/
 //Parse the values of the file
 int parseHeader(char* start, char* end, unsigned int* values) {
 	unsigned int currentValue = 0;
@@ -1008,6 +1028,9 @@ __global__ void dummy() {
 
 size_t preallocUsed = 0;
 
+/*
+* Get Slice from the Preallocation
+*/
 template<size_t MaxPrealloc = PREALLOC, typename T>
 __host__
 void p_malloc(T** alloc, size_t size, unsigned char* prealloc) {
@@ -1073,8 +1096,6 @@ __host__ GPUGraph* parseGraph(std::string graphLoc, unsigned char* prealloc, int
 	//unsigned int vertexLabelCount = header[2];
 	unsigned int edgeLabelCount = header[3];
 
-	//unsigned int padding = CurBlockSize;
-
 	char* input;
 
 	unsigned int* tempEdgeCount, * tempVertexLabels;
@@ -1094,7 +1115,7 @@ __host__ GPUGraph* parseGraph(std::string graphLoc, unsigned char* prealloc, int
 	int inputSize = csize - headerLength - 6 - 6;
 	size_t cubTempSize = edgeCount * sizeof(LabelEdge) * 2;
 
-#ifdef CTGraph_Format
+#ifdef CTGRAPH_USAGE
 
 	int labelCount = trieCount;
 	if (cubTempSize < 2 * OffsetLayerSize) {
@@ -1120,7 +1141,7 @@ __host__ GPUGraph* parseGraph(std::string graphLoc, unsigned char* prealloc, int
 	p_malloc(&g_neighbourData, sizeof(unsigned int) * edgeCount, prealloc);
 
 
-#ifdef CTGraph_Format
+#ifdef CTGRAPH_USAGE
 	CT_Bucket* g_hashlayer;
 	p_malloc(&g_hashlayer, HashLayerSize, prealloc);
 
@@ -1141,24 +1162,14 @@ __host__ GPUGraph* parseGraph(std::string graphLoc, unsigned char* prealloc, int
 		h_triegraphs[i].neighbourOffsets = g_neighbourOffsets;
 		h_triegraphs[i].neighbourData = g_neighbourData;
 
-#ifdef CTGraph_Format
+#ifdef CTGRAPH_USAGE
 		h_triegraphs[i].vertices = g_hashlayer;
 		h_triegraphs[i].bucketCount = _ceil(vertexCount * 2, BUCKET_SIZE);
 		h_triegraphs[i]._neighbourOffsets = padded_g_neighbourOffsets;
 		h_triegraphs[i]._neighbourData = padded_g_neighbourData;
 #endif
 	}
-/*
-	for (int i = 0; i < trieCount; i++) {
-#ifdef CTGraph_Format
-		h_triegraphs[i] = { (int)edgeCount, (int)vertexCount, g_vertexPairs + ((i * vertexCount) / 32 + i), g_neighbourOffsets, g_neighbourData, (unsigned int)i + 1, 
-			false, g_hashlayer, _ceil(vertexCount * 2, BUCKET_SIZE), padded_g_neighbourOffsets, padded_g_neighbourData };
-#else
-		h_triegraphs[i] = { (int)edgeCount, (int)vertexCount, g_vertexPairs + ((i * vertexCount) / 32 + i), g_neighbourOffsets, g_neighbourData, (unsigned int)i + 1 };
-#endif
 
-	}
-*/
 	_edgeCount = edgeCount;
 	_vertexCount = vertexCount;
 
@@ -1184,8 +1195,6 @@ __host__ GPUGraph* parseGraph(std::string graphLoc, unsigned char* prealloc, int
 
 	BlockCount *= deviceProp.multiProcessorCount;
 
-	//(char* input, int inputSize, TempCSRGraph output, int* completion, void* cubTempStorage, size_t cubTempSize);
-
 	TempCSRGraph output{ tempEdgeCount , tempVertexLabels, tempEdges, tempSortedEdges };
 
 	cudaErrorSync();
@@ -1206,15 +1215,6 @@ __host__ GPUGraph* parseGraph(std::string graphLoc, unsigned char* prealloc, int
 	std::chrono::duration<double> elapsed_seconds = end - start;
 	info_printf("GPU Parse Time: %f\n", elapsed_seconds.count());
 	csv_printf("%fs, ", elapsed_seconds.count());
-
-	//printGraph << <1, 1 >> > (output);
-	// 
-
-	//printGraph2 << <1, 1 >> > (output);
-	//printGraph1 << <1, 1 >> > (output);	
-	//printGraph3 << <1, 1 >> > (triegraphs);
-
-	//printTrie << <1, 1 >> > (triegraphs, edgeLabelCount);
 
 	cudaErrorSync();
 
