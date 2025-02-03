@@ -28,9 +28,9 @@ Our graph parser only works with Unix Line Endings. \r\n is not supported.
 
 **Instructions**
 
-To build ForkMatch use the build script in this repo, with `./build.sh`. It is currently configured for Turing Devices, but feel free to change the compute feature level to your target. 
+To build ForkMatch, use the build script in this repo with `./build.sh`. It is currently configured for Turing Devices, but feel free to change the compute feature level to your target. 
 
-Note we've only tested whether this works on Turing and Ampere devices, if there are target specific issues, please feel free to leave an issue request.
+Note I've only tested whether this works on Turing and Ampere devices, if there are target specific issues, please feel free to leave an issue request.
 
 To run it use `./build/ForkMatch \<Query Graph Location\> \<Data Graph Location\>
 
