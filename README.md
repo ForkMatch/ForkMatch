@@ -19,8 +19,8 @@ An edge is written as "e \<Source Vertex ID\> \<Destination Vertex ID\> \<Label\
 
 The line `e 3 4 2` states vertex 3 is connected vertex 4 with an edge with label 2.
 
-Note that our system requires an undirect edge between vertices be represented as two lines in the graph file:
-A vertex 3 and 4 connected means the file includes `e 3 4 <Label>` and `e 4 3 <Label>`
+Note that our system requires an undirected edge between vertices be represented as two lines in the graph text file:
+A vertex 3 and 4 connected means the file must include both `e 3 4 <Label>` and `e 4 3 <Label>`
 
 Our graph parser only works with Unix Line Endings. \r\n is not supported.
 
