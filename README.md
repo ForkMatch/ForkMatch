@@ -4,19 +4,18 @@
 
 **Graph Data Format**
 
-ForkMatch uses a graph format based on GSI's *.g format:
+ForkMatch uses a graph format based on GSI's *.g format and is described as follows:
 
 A file starts with `t # 0` and ends with `t # -1`.
 
 The second line states the vertex count, edge count, vertex label maximum and edge label maximum.
-
-The line `1000 2000 1 86` corrseponds to 1000 vertices, 2000 edges, vertex label is maximum 1 and edge labels are at most 86 (inclusive).
+For example, the line `1000 2000 1 86` corrseponds to 1000 vertices, 2000 edges, vertex label is maximum 1 and edge labels are at most 86 (inclusive).
 
 A vertex is written as "v \<Vertex ID\> \<Label\>".
 
 The line `v 3 1` states vertex with ID 3 has label 1.
 
-A source is written as "e \<Source Vertex ID\> \<Destination Vertex ID\> \<Label\>".
+An edge is written as "e \<Source Vertex ID\> \<Destination Vertex ID\> \<Label\>".
 
 The line `e 3 4 2` states vertex 3 is connected vertex 4 with an edge with label 2.
 
