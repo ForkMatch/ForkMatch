@@ -105,7 +105,6 @@ __device__ void isoLoop(
 
 template<unsigned int BlockSize, bool hasSymmetry>
 __global__ void initPosting(
-     unsigned int* workSplits,
     MemoryPool memPool,
     FuncPair* forest, GPUGraph* data, 
     Requirements reqs,

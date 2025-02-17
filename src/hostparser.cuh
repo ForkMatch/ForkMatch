@@ -313,6 +313,7 @@ bool fileParse(std::string loc, CCSR* ccsr, bool directed) {
 	char* strPtr = buf;
 
 	if (strncmp(buf, "t # 0\n", 6)) {
+		info_printf("Error: Wrong Query Graph Format, Missing \"t # 0\\n\" \n");
 		exit(ERR_INVALID_DATA); //BROKE
 	}
 
@@ -324,6 +325,7 @@ bool fileParse(std::string loc, CCSR* ccsr, bool directed) {
 
 	pState = parseValues(&strPtr, strEnd, values, header_p);
 	if (pState == fail_p) {
+		info_printf("Error: Malformed Query Graph Header");
 		exit(ERR_INVALID_DATA);
 	}
 
@@ -339,6 +341,7 @@ bool fileParse(std::string loc, CCSR* ccsr, bool directed) {
 		clearValues(values, 2);
 		pState = parseValues(&strPtr, strEnd, values, vertex_p);
 		if (pState == fail_p) {
+			info_printf("Error: Malformed Query Vertex Data");
 			exit(ERR_INVALID_DATA);
 		}
 		if (pState == end_p) {
@@ -369,6 +372,7 @@ bool fileParse(std::string loc, CCSR* ccsr, bool directed) {
 		clearValues(values, 3);
 		pState = parseValues(&strPtr, strEnd, values, edge_p);
 		if (pState == fail_p) {
+			info_printf("Error: Malformed Query Edge Data");
 			exit(ERR_INVALID_DATA);
 		}
 		if (pState == end_p) {
@@ -420,6 +424,7 @@ bool fileParse(std::string loc, CCSR* ccsr, bool directed) {
 	for (unsigned int i = 0; i < verticeCount; i++) {
 		unsigned int currentVertex = orderings[i].mapping;
 		if (currentVertex >= verticeCount) {
+			info_printf("Error: More vertices in Query data than Header");
 			exit(1);
 		}
 		auto row = allocations[currentVertex];
@@ -492,7 +497,6 @@ bool fileParse(std::string loc, CCSR* ccsr, bool directed) {
 	info_printf("\nParse - Resort Time: %fs\n", elapsed_secondsSo.count());
 
 	delete[] temp;
-
 
 	*ccsr = {verticeCount, allocationSize, ccsrData, verticeLocs, localVerticeLocs, invVerticeLocs, staggerInfo, maxDegree}; //Fix this!
 

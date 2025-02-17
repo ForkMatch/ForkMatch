@@ -587,7 +587,7 @@ __host__ unsigned int preProcessQuery(CCSR query, Requirements* requirements) {
 		info_printf("(%lu, %lu)", query.localVertices[i], identity.mappings[i]);
 	}
 
-	info_printf("Mapping Data: ");
+	info_printf("\n\nMapping Order: ");
 	for (unsigned int i = 0; i < query.count; i++) {
 		info_printf("%i, ", requirements->mappingData[i]);
 	}
@@ -637,9 +637,11 @@ __host__ unsigned int preProcessQuery(CCSR query, Requirements* requirements) {
 		//printf("Jumps for depth %u: %u\n", depth, jumps);
 	}
 
+	info_printf("\n");
+
 	for (unsigned int i = 0; i < query.count; i++) {
 		auto group = equivalentGroups[i];
-		info_printf("Equivalent Groups: ");
+		info_printf("Equivalent Groups for Vertex %u: ", i);
 		for (unsigned int vert : group) {
 			info_printf("%u, ", vert);
 		}

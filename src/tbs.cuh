@@ -83,11 +83,6 @@ struct MemoryPool : SharedPool <unsigned int>
 
 		const unsigned int cap = capacity();
 
-		//printf("!");
-
-		/*
-		unsigned int random = ((clock() * 7621) + 1) % 32768; //Slow down pushes!*/
-
 		unsigned int addr = atomicInc(tail, cap);
 		if (addr == *head) {
 			poolError("Push failed -- Buffer Overflow");
@@ -140,6 +135,8 @@ struct MemoryPool : SharedPool <unsigned int>
 	}
 };
 
+
+//Unused
 struct JobBoard : SharedPool <JobPosting>
 {
 
@@ -149,7 +146,7 @@ struct JobBoard : SharedPool <JobPosting>
 	__device__ __host__
 	JobBoard() {}
 
-	__device__ void push(JobPosting bank) { //Do not hammer this or you may UB badly!! There is no busy waits to prevent reading incomplete elements
+	__device__ void push(JobPosting bank) {
 
 		const unsigned int cap = capacity();
 
