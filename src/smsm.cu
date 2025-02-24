@@ -455,6 +455,7 @@ __forceinline__ bool isoMatch(
 
     bool earlyBreak = false;
     bool globalEarlyBreak = false;
+    bool globalTooLarge = false;
 
 
     while (loopInc(workCompleted, warpSplit, 32, wdx) < ceil_workCount) {
@@ -475,8 +476,11 @@ __forceinline__ bool isoMatch(
             if constexpr (HeaderCount == 1) {
                 unsigned int rowDelta = firstRow.end - firstRow.start;
                 tooLarge = rowDelta >= TooLargeThreshold; //256
-                if(tooLarge)
+                if (tooLarge) {
+                    globalTooLarge = true;
                     firstRow = {};
+                }
+                    
             }
         }
         else {
@@ -553,6 +557,9 @@ __forceinline__ bool isoMatch(
 
   
     globalEarlyBreak = __syncthreads_or(earlyBreak);
+#ifdef COOPGEN
+    globalTooLarge = __syncthreads_or(globalTooLarge);
+#endif
 
     if (globalEarlyBreak) {
 
@@ -560,7 +567,7 @@ __forceinline__ bool isoMatch(
 
             JobPosting _posting = posting;
 
-            if (dst + workGenerated >= outputTrueMax || true) {
+            if (dst + workGenerated >= outputTrueMax || globalTooLarge) {
 
                 unsigned int splitCount = 2;
 
@@ -778,7 +785,6 @@ template<unsigned int BlockSize>
 __device__
 __forceinline__ void isoInit(
     JobPosting& posting,
-    unsigned int* workSplits,
     MemoryPool memPool,
     FuncPair* forest, GPUGraph* data, 
     Requirements reqs,
@@ -920,7 +926,6 @@ __device__ void isoLoop(
 */
 template<unsigned int BlockSize, bool hasSymmetry>
 __global__ void initPosting(
-     unsigned int* workSplits,
     MemoryPool memPool,
     FuncPair* forest, GPUGraph* data, 
     Requirements reqs,
@@ -929,7 +934,7 @@ __global__ void initPosting(
     __shared__ SMem_Scratch scratch;
     __shared__ JobPosting posting;
 
-    isoInit<BlockSize>(posting, workSplits, memPool, forest, data, reqs, &scratch);
+    isoInit<BlockSize>(posting, memPool, forest, data, reqs, &scratch);
 
     unsigned int startDepth = 1;
 
@@ -1056,8 +1061,6 @@ void freeDst(
 
     memPool.push(oBank);
 }
-
-
 
 /*
 * Launched Kernel to two new blocks to search the TBS
@@ -1245,7 +1248,7 @@ __host__ void match(std::string queryStr, std::string dataStr, unsigned char* pr
     memPool.popCount = popCount;
 #endif
 
-    //JobBoard board{ boardData , boardData + 1, postings };
+    JobBoard board{ boardData , boardData + 1, postings };
 
     FuncPair* funcpairs;
     p_malloc(&funcpairs, sizeof(FuncPair) * SOLNSIZE, prealloc);
@@ -1257,9 +1260,6 @@ __host__ void match(std::string queryStr, std::string dataStr, unsigned char* pr
 
     unsigned int* workSplitsG;
     p_malloc(&workSplitsG, sizeof(unsigned int) * 2, prealloc);
-
-    unsigned int workSplits[] = { 0, 1090920 };
-    cudaMemcpy(workSplitsG, workSplits, sizeof(workSplits), cudaMemcpyHostToDevice);
 
     dummy << <1, 1 >> > ();
     cudaErrorSync();
@@ -1273,7 +1273,7 @@ __host__ void match(std::string queryStr, std::string dataStr, unsigned char* pr
 
     cudaDeviceProp deviceProp;
     cudaGetDeviceProperties(&deviceProp, 0);
-    cudaOccupancyMaxActiveBlocksPerMultiprocessor(&blockCount, initPosting<CurBlockSize, false>, CurBlockSize, 0);
+    cudaError(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&blockCount, initPosting<CurBlockSize, false>, CurBlockSize, 0));
 
     info_printf("Max blocks per SM, %i\n", blockCount);
 
@@ -1300,12 +1300,11 @@ __host__ void match(std::string queryStr, std::string dataStr, unsigned char* pr
 
     unsigned int populateCount = (SubMemPoolCapacity / CurBlockSize) + 1;
 
-    populatePool<<<populateCount, CurBlockSize >>> (memPool); //This will BREAK!!! needs variable launch args
+    populatePool<<<populateCount, CurBlockSize >>> (memPool);
 
 #ifdef SYMMETRY
         if (requirements.symmetryCount > 1) {
             initPosting<CurBlockSize, true> << <blockCount, CurBlockSize >> > (
-                workSplitsG,
                 memPool,
                 funcpairs, data,
                 reqsG,
@@ -1313,7 +1312,6 @@ __host__ void match(std::string queryStr, std::string dataStr, unsigned char* pr
         }
         else {
             initPosting<CurBlockSize, false> << <blockCount, CurBlockSize >> > (
-                workSplitsG,
                 memPool,
                 funcpairs, data,
                 reqsG,
@@ -1321,7 +1319,6 @@ __host__ void match(std::string queryStr, std::string dataStr, unsigned char* pr
         }
 #else
         initPosting<CurBlockSize, false> << <blockCount, CurBlockSize >> > (
-            workSplitsG,
             memPool,
             funcpairs, data,
             reqsG,
@@ -1363,11 +1360,7 @@ int main(int argc, char* argv[])
 
     cudaDeviceReset();
 
-    if (cudaError_t error = cudaDeviceSetLimit(cudaLimitDevRuntimePendingLaunchCount, LaunchLimit)) {
-        info_printf("Error: %s", cudaGetErrorName(error));
-        cudaDeviceReset();
-        exit(error);
-    }
+    cudaError(cudaDeviceSetLimit(cudaLimitDevRuntimePendingLaunchCount, LaunchLimit));
 
     //Warmup the device!
     for (int i = 0; i < 1; i++) {
@@ -1376,7 +1369,7 @@ int main(int argc, char* argv[])
         dummy << <1, 1 >> > ();
         cudaFree(test);
     }
-    cudaDeviceSynchronize();
+    cudaErrorSync();
 
     unsigned char* allocation = prealloc();
 
