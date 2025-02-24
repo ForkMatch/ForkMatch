@@ -14,6 +14,8 @@
 #define LaunchLimit 100'000
 #define SubMaxMulSpill 512
 
+static const unsigned int TooLargeThreshold = 1024;
+
 static const unsigned int CurBankSize = 1 << 20;
 static const unsigned int PaddingMul = 16;
 
